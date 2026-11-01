@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // cacheComponents is left off on purpose: it keeps a left page alive in the background, and
+  // the Monaco code editor crashes ("InstantiationService has been disposed") when that page comes back.
   turbopack: {
     rules: {
       "*.css": {
