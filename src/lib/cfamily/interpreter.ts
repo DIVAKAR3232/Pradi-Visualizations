@@ -26,6 +26,10 @@ export class ThrowSig {
 }
 class StepLimit {}
 export class ExitSig {}
+/** The program wants input and none is left: the UI asks the user, then runs again. */
+export class NeedInput {}
+
+export type InputOptions = { interactive?: boolean; eof?: boolean };
 
 export type Binding = { loc: Loc; type: TypeRef | null; hidden?: boolean };
 export type RFrame = {
@@ -50,29 +54,53 @@ const JAVA_EXC: Record<string, string> = {
 
 class Input {
   pos = 0;
-  constructor(private s: string) {}
+  private echoed = 0;
+  constructor(
+    private s: string,
+    private opts: InputOptions,
+    private echo: (text: string) => void,
+  ) {}
+  /** Out of input: in interactive mode, stop and ask the user (unless they pressed End of input). */
+  private empty(): null {
+    if (this.opts.interactive && !this.opts.eof) throw new NeedInput();
+    return null;
+  }
+  /** Show each input line in the output once, like a terminal does when you type it. */
+  private show() {
+    if (this.pos <= this.echoed) return;
+    let e = this.s.indexOf("\n", Math.max(this.pos - 1, this.echoed));
+    if (e < 0) e = this.s.length;
+    this.echo(this.s.slice(this.echoed, e).replace(/\r/g, "") + "\n");
+    this.echoed = e + 1;
+  }
   token(): string | null {
     while (this.pos < this.s.length && /\s/.test(this.s[this.pos])) this.pos++;
-    if (this.pos >= this.s.length) return null;
+    if (this.pos >= this.s.length) return this.empty();
     const st = this.pos;
     while (this.pos < this.s.length && !/\s/.test(this.s[this.pos])) this.pos++;
+    this.show();
     return this.s.slice(st, this.pos);
   }
   line(): string | null {
-    if (this.pos >= this.s.length) return null;
+    if (this.pos >= this.s.length) return this.empty();
     let e = this.s.indexOf("\n", this.pos);
     if (e < 0) e = this.s.length;
     const l = this.s.slice(this.pos, e).replace(/\r$/, "");
     this.pos = e + 1;
+    this.show();
     return l;
   }
   char(skipWs: boolean): string | null {
     if (skipWs) while (this.pos < this.s.length && /\s/.test(this.s[this.pos])) this.pos++;
-    if (this.pos >= this.s.length) return null;
-    return this.s[this.pos++];
+    if (this.pos >= this.s.length) return this.empty();
+    const c = this.s[this.pos++];
+    this.show();
+    return c;
   }
   hasToken(): boolean {
-    return /\S/.test(this.s.slice(this.pos));
+    const has = /\S/.test(this.s.slice(this.pos));
+    if (!has && this.opts.interactive && !this.opts.eof) throw new NeedInput();
+    return has;
   }
 }
 
@@ -98,8 +126,11 @@ export class Interp {
     public lang: Dialect,
     public src: string,
     stdin: string,
+    inputOpts: InputOptions = {},
   ) {
-    this.input = new Input(stdin);
+    this.input = new Input(stdin, inputOpts, (t) => {
+      this.out += t;
+    });
   }
 
   // ---------- helpers ----------
@@ -2119,10 +2150,14 @@ export class Interp {
       }
       const args: Arg[] = main.params.length ? [{ v: this.mkSeq("array", "String[]", simpleType("String"), false, []), loc: null }] : [];
       this.callUser(main, args, null);
+      this.curLine = main.endLine;
       this.finish();
     } catch (x) {
       if (x instanceof StepLimit) {
         result.limit = true;
+      } else if (x instanceof NeedInput) {
+        result.needInput = true;
+        this.pendingCond = null;
       } else if (x instanceof ExitSig) {
         this.finish();
       } else if (x instanceof CodeError) {

@@ -11,6 +11,13 @@ class _StepLimit(Exception):
     pass
 
 
+class _NeedInput(BaseException):
+    """Raised when the program asks for input and none is left (interactive mode)."""
+
+    def __init__(self, prompt):
+        self.prompt = prompt
+
+
 def _prim(v):
     t = type(v).__name__
     if isinstance(v, float) and (math.isinf(v) or math.isnan(v)):
@@ -94,11 +101,14 @@ def _frame_vars(frame, is_module):
     return out
 
 
-def run_trace(code, stdin_text=""):
+def run_trace(code, stdin_text="", interactive=False, eof=False):
     steps = []
     out = io.StringIO()
     in_lines = stdin_text.split("\n") if stdin_text else []
+    if stdin_text.endswith("\n"):
+        in_lines.pop()  # "5\n" is one line, not two
     in_pos = [0]
+    stopping = [False]
     frame_ids = {}
     next_frame_id = [1]
 
@@ -109,7 +119,10 @@ def run_trace(code, stdin_text=""):
             in_pos[0] += 1
             out.write(v + "\n")
             return v
-        raise EOFError("No more input. Type input lines in the Input box (one per line).")
+        if interactive and not eof:
+            stopping[0] = True
+            raise _NeedInput(str(prompt))
+        raise EOFError("No more input (you pressed End of input).")
 
     user_builtins = dict(builtins.__dict__)
     user_builtins["input"] = fake_input
@@ -165,6 +178,8 @@ def run_trace(code, stdin_text=""):
             del frame_ids[id(frame)]
 
     def tracer(frame, event, arg):
+        if stopping[0]:
+            return None
         if frame.f_code.co_filename != "<user>":
             return None
         if event == "call":
@@ -195,6 +210,9 @@ def run_trace(code, stdin_text=""):
         exec(compiled, user_globals)
     except _StepLimit:
         result["limit"] = True
+    except _NeedInput as e:
+        result["needInput"] = True
+        result["prompt"] = e.prompt
     except BaseException as e:
         tb = e.__traceback__
         line = None

@@ -1,7 +1,7 @@
 import { fmtVal, heapObj, nameOf, substitute, valKey } from "./format";
 import { type HeapObj, SEQ_KINDS, type Step, type TraceResult, type Val } from "./types";
 
-export type Tone = "start" | "info" | "call" | "return" | "true" | "false" | "loop" | "error" | "done";
+export type Tone = "start" | "info" | "call" | "return" | "true" | "false" | "loop" | "error" | "done" | "input";
 
 export type Highlights = {
   vars: Set<string>; // `${frameId}:${name}` that changed or were created
@@ -172,6 +172,16 @@ export function explain(trace: TraceResult, i: number, lines: string[]): Explana
       title: `Error on line ${trace.errorLine ?? cur.line}: \`${trace.error}\``,
       why: errorHint(trace.error),
       details,
+      highlights: hl,
+    };
+  }
+
+  if (isLast && trace.needInput) {
+    return {
+      tone: "input",
+      title: `The program is waiting for input on line ${cur.line}: \`${codeAt(cur.line)}\``,
+      why: "Type a value in the box below and press Enter. The program then continues from this line using your value.",
+      details: prev ? diff(prev, cur, hl) : [],
       highlights: hl,
     };
   }

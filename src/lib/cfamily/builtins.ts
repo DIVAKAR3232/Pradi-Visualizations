@@ -1577,7 +1577,9 @@ function seqMethod(it: Interp, id: number, h: HSeq, name: string, call: Call, wa
           if (i >= 0) items.splice(i, 1);
           return { t: "bool", v: i >= 0 };
         }
-        if (x.t === "int" && h.ctype !== "queue" && h.ctype !== "pq" && h.ctype !== "deque" && call.args[0].k !== "cast") {
+        const a0 = call.args[0];
+        const boxed = a0.k === "cast" || (a0.k === "call" && a0.callee.k === "member" && a0.callee.name === "valueOf");
+        if (x.t === "int" && h.ctype !== "queue" && h.ctype !== "pq" && h.ctype !== "deque" && !boxed) {
           bounds(x.v);
           return items.splice(x.v, 1)[0];
         }

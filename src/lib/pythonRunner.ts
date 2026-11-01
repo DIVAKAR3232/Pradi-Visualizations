@@ -54,7 +54,9 @@ function whenReady(): Promise<boolean> {
   });
 }
 
-export async function tracePython(code: string, stdin: string): Promise<TraceResult> {
+export type RunOptions = { interactive?: boolean; eof?: boolean };
+
+export async function tracePython(code: string, stdin: string, opts: RunOptions = {}): Promise<TraceResult> {
   initRunner();
   if (!(await whenReady())) {
     return { steps: [], error: "Could not load the Python engine. Check your internet connection and reload the page." };
@@ -73,6 +75,6 @@ export async function tracePython(code: string, stdin: string): Promise<TraceRes
       clearTimeout(timer);
       resolve(r);
     });
-    worker!.postMessage({ id, code, stdin });
+    worker!.postMessage({ id, code, stdin, interactive: !!opts.interactive, eof: !!opts.eof });
   });
 }

@@ -3,7 +3,7 @@
 import { Network } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { fmtPrim } from "@/lib/format";
-import type { GraphStructure, ListStructure, Structures, TreeStructure } from "@/lib/structures";
+import type { GraphStructure, ListStructure, NaryStructure, Structures, TreeStructure } from "@/lib/structures";
 import type { HeapObj, Step } from "@/lib/types";
 import type { Ctx } from "./Values";
 
@@ -11,7 +11,7 @@ const spring = { type: "spring", stiffness: 380, damping: 30 } as const;
 type Obj = HeapObj & { kind: "object" };
 
 export function hasStructures(s: Structures) {
-  return s.lists.some((l) => l.chains.length) || s.trees.some((t) => t.roots.length) || s.graphs.length > 0;
+  return s.lists.some((l) => l.chains.length) || s.trees.some((t) => t.roots.length) || s.narys.some((t) => t.roots.length) || s.graphs.length > 0;
 }
 
 export function StructuresPanel({ structs, ctx }: { structs: Structures; ctx: Ctx }) {
@@ -20,17 +20,20 @@ export function StructuresPanel({ structs, ctx }: { structs: Structures; ctx: Ct
       <div className="panel-title mb-3">
         <Network className="size-3.5" /> Data structures
       </div>
-      <div className="flex flex-col gap-5">
+      <motion.div layoutRoot className="flex flex-col gap-5">
         {structs.lists.map((l) => (
           <ListView key={l.cls} list={l} structs={structs} ctx={ctx} />
         ))}
         {structs.trees.map((t) => (
           <TreeView key={t.cls} tree={t} structs={structs} ctx={ctx} />
         ))}
+        {structs.narys.map((t) => (
+          <NaryView key={t.cls} tree={t} structs={structs} ctx={ctx} />
+        ))}
         {structs.graphs.map((g) => (
           <GraphView key={g.name} g={g} />
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -184,7 +187,7 @@ function TreeView({ tree, structs, ctx }: { tree: TreeStructure; structs: Struct
         Binary tree
         {tree.roots.length > 1 && <span className="text-slate-500">· {tree.roots.length} parts (some nodes not linked yet)</span>}
       </div>
-      <div className="flex flex-wrap gap-6 overflow-x-auto pb-2">
+      <div className="flex flex-wrap [justify-content:safe_center] gap-6 overflow-x-auto pb-2 pt-7">
         {tree.roots.map((root) => {
           const placed = layoutTree(root, tree, ctx.step);
           const cols = Math.max(1, ...placed.map((p) => p.x + 1));
@@ -241,6 +244,123 @@ function TreeView({ tree, structs, ctx }: { tree: TreeStructure; structs: Struct
                         }`}
                       >
                         {structs.nodes.get(p.id)?.label}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- trie / n-ary tree
+
+type NPlaced = { id: string; x: number; y: number; parent?: string };
+
+function layoutNary(root: string, tree: NaryStructure): NPlaced[] {
+  const out: NPlaced[] = [];
+  const seen = new Set<string>();
+  const place = (id: string, depth: number, left: number, parent?: string): number => {
+    seen.add(id);
+    const kids = (tree.children.get(id) ?? []).filter((k) => !seen.has(k));
+    if (!kids.length || depth > 14) {
+      out.push({ id, x: left, y: depth, parent });
+      return left + 1;
+    }
+    let cur = left;
+    const start = out.length;
+    for (const k of kids) cur = place(k, depth + 1, cur, id);
+    const xs = out.slice(start).filter((p) => p.y === depth + 1).map((p) => p.x);
+    out.push({ id, x: (Math.min(...xs) + Math.max(...xs)) / 2, y: depth, parent });
+    return cur;
+  };
+  place(root, 0, 0);
+  return out;
+}
+
+function NaryView({ tree, structs, ctx }: { tree: NaryStructure; structs: Structures; ctx: Ctx }) {
+  const DX = 46;
+  const DY = 62;
+  const R = 17;
+  const isEnd = (id: string) => {
+    if (!tree.endField) return false;
+    const o = ctx.step.heap[id];
+    const v = o?.kind === "object" ? o.fields.find(([n]) => n === tree.endField)?.[1] : undefined;
+    return !!v && v.k === "p" && (v.v === true || v.v === 1);
+  };
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+        <span className="rounded-md bg-fuchsia-400/10 px-2 py-0.5 font-mono text-fuchsia-300 ring-1 ring-fuchsia-400/20">{tree.cls}</span>
+        {tree.trie ? "Trie (prefix tree)" : "Tree"} · {structs.nodes.size ? [...structs.nodes.values()].filter((n) => n.cls === tree.cls).length : 0} nodes
+        {tree.trie && tree.endField && (
+          <span className="flex items-center gap-1 text-slate-500">
+            · <span className="size-2.5 rounded-full ring-2 ring-emerald-300" /> end of a word
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap [justify-content:safe_center] gap-6 overflow-x-auto pb-2 pt-7">
+        {tree.roots.map((root) => {
+          const placed = layoutNary(root, tree);
+          const cols = Math.max(1, ...placed.map((p) => p.x + 1));
+          const rows = Math.max(1, ...placed.map((p) => p.y + 1));
+          const W = cols * DX + 16;
+          const H = rows * DY + 10;
+          const at = new Map(placed.map((p) => [p.id, p]));
+          const cx = (p: NPlaced) => p.x * DX + DX / 2 + 8;
+          const cy = (p: NPlaced) => p.y * DY + R + 4;
+          return (
+            <div key={root} className="relative shrink-0" style={{ width: W, height: H }}>
+              <svg width={W} height={H} className="absolute inset-0 overflow-visible">
+                {placed.map((p) => {
+                  const par = p.parent ? at.get(p.parent) : undefined;
+                  if (!par) return null;
+                  return (
+                    <motion.line
+                      key={`${par.id}-${p.id}`}
+                      initial={{ pathLength: 0, opacity: 0 }}
+                      animate={{ pathLength: 1, opacity: 1, x1: cx(par), y1: cy(par), x2: cx(p), y2: cy(p) }}
+                      transition={{ duration: 0.35 }}
+                      stroke="rgba(148,163,184,0.45)"
+                      strokeWidth={1.75}
+                    />
+                  );
+                })}
+              </svg>
+              <AnimatePresence>
+                {placed.map((p) => {
+                  const names = structs.badges.get(p.id) ?? [];
+                  const hot = ctx.hl.keys.get(p.id)?.size;
+                  const end = isEnd(p.id);
+                  const label = p.parent ? (structs.nodes.get(p.id)?.label ?? "") : tree.trie ? "•" : (structs.nodes.get(p.id)?.label ?? "");
+                  return (
+                    <motion.div
+                      key={p.id}
+                      initial={{ opacity: 0, scale: 0.3, left: cx(p) - R, top: cy(p) - R }}
+                      animate={{ opacity: 1, scale: 1, left: cx(p) - R, top: cy(p) - R }}
+                      exit={{ opacity: 0, scale: 0.3 }}
+                      transition={spring}
+                      className="absolute"
+                      style={{ width: R * 2, height: R * 2 }}
+                    >
+                      <Badges names={names} />
+                      <div
+                        className={`grid size-full place-items-center rounded-full font-mono text-sm font-semibold text-white ring-2 transition-all duration-300 ${
+                          hot
+                            ? "bg-amber-400/25 ring-amber-300 shadow-[0_0_18px_rgba(251,191,36,0.45)]"
+                            : names.length
+                              ? "bg-cyan-400/20 ring-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.4)]"
+                              : end
+                                ? "bg-emerald-500/30 ring-emerald-300 shadow-[0_0_0_3px_rgba(16,185,129,0.25)]"
+                                : "bg-fuchsia-500/10 ring-fuchsia-400/40"
+                        }`}
+                        title={end ? "End of a word" : undefined}
+                      >
+                        {label}
                       </div>
                     </motion.div>
                   );

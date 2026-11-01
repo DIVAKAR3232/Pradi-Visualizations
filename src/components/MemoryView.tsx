@@ -26,7 +26,8 @@ export function MemoryView({ ctx, indexMap }: { ctx: Ctx; indexMap: Map<string, 
 
   return (
     <LayoutGroup>
-      <div className="flex flex-col gap-3">
+      {/* layoutRoot: when panels above grow or shrink, frames do not fly across the page */}
+      <motion.div layoutRoot className="flex flex-col gap-3">
         <AnimatePresence initial={false} mode="popLayout">
           {frames.map((f, idx) => {
             const active = idx === 0;
@@ -106,7 +107,7 @@ export function MemoryView({ ctx, indexMap }: { ctx: Ctx; indexMap: Map<string, 
             );
           })}
         </AnimatePresence>
-      </div>
+      </motion.div>
     </LayoutGroup>
   );
 }

@@ -13,11 +13,11 @@ ready
   .catch((err) => self.postMessage({ type: "loadError", error: String(err) }));
 
 self.onmessage = async (e) => {
-  const { id, code, stdin } = e.data;
+  const { id, code, stdin, interactive, eof } = e.data;
   try {
     const py = await ready;
     const run = py.globals.get("run_trace");
-    const json = run(code, stdin || "");
+    const json = run(code, stdin || "", !!interactive, !!eof);
     run.destroy();
     self.postMessage({ type: "result", id, result: JSON.parse(json) });
   } catch (err) {

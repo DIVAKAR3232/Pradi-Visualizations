@@ -58,6 +58,10 @@ export type TraceResult = {
   syntax?: boolean;
   lang?: Language;
   maxSteps?: number;
+  /** The program stopped because it is waiting for the user to type input. */
+  needInput?: boolean;
+  /** Text the program printed as the input prompt (Python input("...")). */
+  prompt?: string;
 };
 
 export type Language = "python" | "java" | "cpp" | "c";

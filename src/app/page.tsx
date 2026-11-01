@@ -17,11 +17,13 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CodeEditor } from "@/components/CodeEditor";
 import { ExplanationCard } from "@/components/ExplanationCard";
+import { InputPrompt } from "@/components/InputPrompt";
 import { MemoryView } from "@/components/MemoryView";
 import { OutputView } from "@/components/OutputView";
 import { Player } from "@/components/Player";
 import { RecursionTree } from "@/components/RecursionTree";
 import { RichText } from "@/components/RichText";
+import { NavTabs } from "@/components/NavTabs";
 import { ShareButton } from "@/components/ShareButton";
 import { hasStructures, StructuresPanel } from "@/components/StructuresPanel";
 import { traceCFamily } from "@/lib/cfamily";
@@ -53,6 +55,8 @@ export default function Home() {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [running, setRunning] = useState(false);
+  const [eof, setEof] = useState(false);
+  const [answering, setAnswering] = useState(false);
   const [engine, setEngine] = useState<RunnerStatus>("loading");
 
   useEffect(() => {
@@ -126,17 +130,40 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [hasSteps, idx, last, seek]);
 
+  /** Runs the program. Interactive: when it needs input that was not given yet, it stops there and asks. */
+  const runTrace = async (src: string, input: string, endOfInput: boolean) => {
+    // Let the spinner paint before the (synchronous) interpreter starts.
+    await new Promise((r) => setTimeout(r, 30));
+    const opts = { interactive: true, eof: endOfInput };
+    return lang === "python" ? tracePython(src, input, opts) : traceCFamily(src, lang, input, opts);
+  };
+
   const visualize = async () => {
     setRunning(true);
     setPlaying(false);
-    // Let the spinner paint before the (synchronous) interpreter starts.
-    await new Promise((r) => setTimeout(r, 30));
-    const result = lang === "python" ? await tracePython(code, stdin) : await traceCFamily(code, lang, stdin);
+    setEof(false);
+    const result = await runTrace(code, stdin, false);
     setTrace(result);
     setTraceCode(code);
     setIdx(0);
     setDir(1);
     setRunning(false);
+  };
+
+  /** The user typed a line while the program was waiting: run again with it and carry on from here. */
+  const answerInput = async (value: string | null) => {
+    const pos = idx;
+    const newStdin = value === null ? stdin : `${stdin && !stdin.endsWith("\n") ? stdin + "\n" : stdin}${value}\n`;
+    const endOfInput = value === null;
+    setAnswering(true);
+    setStdin(newStdin);
+    if (endOfInput) setEof(true);
+    const result = await runTrace(traceCode, newStdin, endOfInput || eof);
+    setTrace(result);
+    setDir(1);
+    setIdx(Math.min(pos + 1, Math.max(result.steps.length - 1, 0)));
+    setAnswering(false);
+    setPlaying(true);
   };
 
   const editCode = () => {
@@ -193,6 +220,7 @@ export default function Home() {
           <div className="hidden text-xs text-slate-400 sm:block">See your code run, one line at a time</div>
         </div>
         <div className="ml-auto" />
+        <NavTabs compactOnMobile />
         <ShareButton lang={lang} code={code} stdin={stdin} />
         <div className="flex items-center gap-2 rounded-full bg-white/[0.04] px-3 py-1.5 text-xs text-slate-400 ring-1 ring-white/[0.08]">
           {engine === "loading" && lang === "python" && <Loader2 className="size-3.5 animate-spin text-indigo-300" />}
@@ -276,7 +304,7 @@ export default function Home() {
                 >
                   <div className="p-3">
                     <div className="panel-title mb-2">
-                      <TextCursorInput className="size-3.5" /> Input (one line per input() call)
+                      <TextCursorInput className="size-3.5" /> Input (optional: type it here first, or answer when the program asks)
                     </div>
                     <textarea
                       value={stdin}
@@ -367,6 +395,17 @@ export default function Home() {
           ) : ex && ctx ? (
             <>
               <ExplanationCard ex={ex} stepKey={idx} nextLine={nextLine} nextCode={nextLine ? lines[nextLine - 1]?.trim() : undefined} />
+              {trace?.needInput && idx === last && (
+                <InputPrompt
+                  out={step.out}
+                  prompt={trace.prompt}
+                  line={step.line}
+                  busy={answering}
+                  given={stdin.split("\n").filter((l, i, a) => l !== "" || i < a.length - 1)}
+                  onSubmit={(v) => answerInput(v)}
+                  onEof={() => answerInput(null)}
+                />
+              )}
               {structs && hasStructures(structs) && <StructuresPanel structs={structs} ctx={ctx} />}
               <RecursionTree tree={callTree} idx={idx} />
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
@@ -407,7 +446,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
 
 function CallStack({ names }: { names: string[] }) {
   return (
-    <div className="flex flex-col-reverse gap-1.5">
+    <motion.div layoutRoot className="flex flex-col-reverse gap-1.5">
       <AnimatePresence initial={false}>
         {names.map((n, i) => (
           <motion.div
@@ -425,7 +464,7 @@ function CallStack({ names }: { names: string[] }) {
           </motion.div>
         ))}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }
 

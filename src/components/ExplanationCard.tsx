@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, CheckCircle2, CornerDownLeft, GitBranch, Lightbulb, PhoneCall, Play, Repeat, XCircle, Zap } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, CornerDownLeft, GitBranch, Keyboard, Lightbulb, PhoneCall, Play, Repeat, XCircle, Zap } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type { Explanation, Tone } from "@/lib/explain";
 import { RichText } from "./RichText";
@@ -15,6 +15,7 @@ const TONES: Record<Tone, { label: string; icon: typeof Zap; color: string; glow
   loop: { label: "Loop", icon: Repeat, color: "text-amber-300 bg-amber-400/15 ring-amber-400/30", glow: "from-amber-500/20" },
   error: { label: "Error", icon: AlertTriangle, color: "text-red-300 bg-red-400/15 ring-red-400/30", glow: "from-red-500/25" },
   done: { label: "Finished", icon: CheckCircle2, color: "text-emerald-300 bg-emerald-400/15 ring-emerald-400/30", glow: "from-emerald-500/25" },
+  input: { label: "Waiting for input", icon: Keyboard, color: "text-cyan-200 bg-cyan-400/15 ring-cyan-400/30", glow: "from-cyan-500/25" },
 };
 
 export function ExplanationCard({ ex, stepKey, nextLine, nextCode }: { ex: Explanation; stepKey: number; nextLine?: number; nextCode?: string }) {

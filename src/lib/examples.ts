@@ -151,6 +151,38 @@ print("Inorder:", result)
 `,
   },
   {
+    id: "trie",
+    title: "Trie (Prefix Tree)",
+    tag: "Trie",
+    code: `class TrieNode:
+    def __init__(self):
+        self.children = {}
+        self.is_end = False
+
+def insert(root, word):
+    node = root
+    for ch in word:
+        if ch not in node.children:
+            node.children[ch] = TrieNode()
+        node = node.children[ch]
+    node.is_end = True
+
+def search(root, word):
+    node = root
+    for ch in word:
+        if ch not in node.children:
+            return False
+        node = node.children[ch]
+    return node.is_end
+
+root = TrieNode()
+for w in ["cat", "car", "dog"]:
+    insert(root, w)
+
+print(search(root, "car"), search(root, "ca"))
+`,
+  },
+  {
     id: "bfs",
     title: "BFS on a Graph (Queue)",
     tag: "Graph",
@@ -483,6 +515,49 @@ public class Main {
         List<Integer> result = new ArrayList<>();
         inorder(root, result);
         System.out.println("Inorder: " + result);
+    }
+}
+`,
+  },
+  {
+    id: "trie",
+    title: "Trie (Prefix Tree)",
+    tag: "Trie",
+    code: `class TrieNode {
+    TrieNode[] children = new TrieNode[26];
+    boolean isEnd;
+}
+
+public class Main {
+    static void insert(TrieNode root, String word) {
+        TrieNode node = root;
+        for (char ch : word.toCharArray()) {
+            int i = ch - 'a';
+            if (node.children[i] == null) {
+                node.children[i] = new TrieNode();
+            }
+            node = node.children[i];
+        }
+        node.isEnd = true;
+    }
+
+    static boolean search(TrieNode root, String word) {
+        TrieNode node = root;
+        for (char ch : word.toCharArray()) {
+            int i = ch - 'a';
+            if (node.children[i] == null) return false;
+            node = node.children[i];
+        }
+        return node.isEnd;
+    }
+
+    public static void main(String[] args) {
+        TrieNode root = new TrieNode();
+        String[] words = {"cat", "car", "dog"};
+        for (String w : words) {
+            insert(root, w);
+        }
+        System.out.println(search(root, "car") + " " + search(root, "ca"));
     }
 }
 `,
@@ -852,6 +927,51 @@ int main() {
     inorder(root, result);
     cout << "Inorder: ";
     for (int x : result) cout << x << " ";
+    return 0;
+}
+`,
+  },
+  {
+    id: "trie",
+    title: "Trie (Prefix Tree)",
+    tag: "Trie",
+    code: `#include <bits/stdc++.h>
+using namespace std;
+
+struct TrieNode {
+    TrieNode* children[26] = {};
+    bool isEnd = false;
+};
+
+void insert(TrieNode* root, string word) {
+    TrieNode* node = root;
+    for (char ch : word) {
+        int i = ch - 'a';
+        if (node->children[i] == nullptr) {
+            node->children[i] = new TrieNode();
+        }
+        node = node->children[i];
+    }
+    node->isEnd = true;
+}
+
+bool search(TrieNode* root, string word) {
+    TrieNode* node = root;
+    for (char ch : word) {
+        int i = ch - 'a';
+        if (node->children[i] == nullptr) return false;
+        node = node->children[i];
+    }
+    return node->isEnd;
+}
+
+int main() {
+    TrieNode* root = new TrieNode();
+    vector<string> words = {"cat", "car", "dog"};
+    for (string w : words) {
+        insert(root, w);
+    }
+    cout << boolalpha << search(root, "car") << " " << search(root, "ca") << endl;
     return 0;
 }
 `,
@@ -1234,6 +1354,55 @@ int main() {
     }
     printf("Inorder: ");
     inorder(root);
+    return 0;
+}
+`,
+  },
+  {
+    id: "trie",
+    title: "Trie (Prefix Tree)",
+    tag: "Trie",
+    code: `#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct TrieNode {
+    struct TrieNode* children[26];
+    int isEnd;
+};
+
+struct TrieNode* newNode() {
+    return (struct TrieNode*)calloc(1, sizeof(struct TrieNode));
+}
+
+void insert(struct TrieNode* root, char word[]) {
+    struct TrieNode* node = root;
+    for (int k = 0; k < strlen(word); k++) {
+        int i = word[k] - 'a';
+        if (node->children[i] == NULL) {
+            node->children[i] = newNode();
+        }
+        node = node->children[i];
+    }
+    node->isEnd = 1;
+}
+
+int search(struct TrieNode* root, char word[]) {
+    struct TrieNode* node = root;
+    for (int k = 0; k < strlen(word); k++) {
+        int i = word[k] - 'a';
+        if (node->children[i] == NULL) return 0;
+        node = node->children[i];
+    }
+    return node->isEnd;
+}
+
+int main() {
+    struct TrieNode* root = newNode();
+    insert(root, "cat");
+    insert(root, "car");
+    insert(root, "dog");
+    printf("%d %d\\n", search(root, "car"), search(root, "ca"));
     return 0;
 }
 `,

@@ -2,7 +2,7 @@
 
 import { GitFork } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CallNode, CallTree } from "@/lib/structures";
 
 const GAP_X = 10;
@@ -20,7 +20,27 @@ function rootsOf(tree: CallTree, idx: number): CallNode[] {
   return roots.length ? [roots[roots.length - 1]] : [];
 }
 
-const label = (n: CallNode) => `${n.name}(${n.args})`;
+const fullLabel = (n: CallNode) => `${n.name}(${n.args})`;
+
+/** Keeps boxes readable: long arguments like [20, 30, 40, 50] become [20, 30, …]. */
+function label(n: CallNode): string {
+  const full = fullLabel(n);
+  if (full.length <= 22) return full;
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (const ch of n.args) {
+    if ("[({".includes(ch)) depth++;
+    if ("])}".includes(ch)) depth--;
+    if (ch === "," && depth === 0) {
+      parts.push(cur.trim());
+      cur = "";
+    } else cur += ch;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  const short = parts.map((a) => (a.length > 9 ? `${a.slice(0, 7)}…${/[\])}]$/.test(a) ? a.slice(-1) : ""}` : a));
+  return `${n.name}(${short.join(", ")})`;
+}
 
 function layout(tree: CallTree, root: CallNode, idx: number, NODE_W: number): { placed: Placed[]; width: number; height: number } {
   const placed: Placed[] = [];
@@ -48,6 +68,15 @@ function layout(tree: CallTree, root: CallNode, idx: number, NODE_W: number): { 
 export function RecursionTree({ tree, idx }: { tree: CallTree; idx: number }) {
   const roots = useMemo(() => rootsOf(tree, idx), [tree, idx]);
   const scroller = useRef<HTMLDivElement>(null);
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBoxW(el.clientWidth));
+    ro.observe(el);
+    setBoxW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
   const active = useMemo(() => {
     // deepest call still running at idx
     let best: CallNode | undefined;
@@ -59,7 +88,7 @@ export function RecursionTree({ tree, idx }: { tree: CallTree; idx: number }) {
   const NODE_W = useMemo(() => {
     const visible = tree.nodes.filter((n) => n.start <= idx && roots.some((r) => r.name === n.name));
     const longest = Math.max(6, ...visible.map((n) => label(n).length));
-    return Math.min(170, Math.max(70, longest * 7.4 + 18));
+    return Math.min(170, Math.max(64, longest * 7.2 + 16));
   }, [tree, idx, roots]);
   const layouts = useMemo(() => roots.map((r) => layout(tree, r, idx, NODE_W)), [roots, tree, idx, NODE_W]);
   const runs = useMemo(
@@ -72,11 +101,17 @@ export function RecursionTree({ tree, idx }: { tree: CallTree; idx: number }) {
     [tree, idx],
   );
 
-  // keep the running call in view
+  // keep the running call in view (scroll only this box, never the page)
   useEffect(() => {
-    const el = scroller.current?.querySelector<HTMLElement>("[data-active='true']");
-    el?.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-  }, [active]);
+    const box = scroller.current;
+    const el = box?.querySelector<HTMLElement>("[data-active='true']");
+    if (!box || !el) return;
+    const b = box.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const left = box.scrollLeft + (r.left - b.left) - (b.width - r.width) / 2;
+    const top = box.scrollTop + (r.top - b.top) - (b.height - r.height) / 2;
+    box.scrollTo({ left: Math.max(0, left), top: Math.max(0, top), behavior: "smooth" });
+  }, [active, boxW]);
 
   if (roots.length === 0) return null;
 
@@ -100,8 +135,11 @@ export function RecursionTree({ tree, idx }: { tree: CallTree; idx: number }) {
       <div ref={scroller} className="flex max-h-[420px] flex-col gap-6 overflow-auto pb-1">
         {layouts.map(({ placed, width, height }, ri) => {
           const at = new Map(placed.map((p) => [p.node.id, p]));
+          // shrink wide trees to fit the panel (not below 60%), then scroll
+          const scale = boxW && width > boxW ? Math.max(0.6, boxW / width) : 1;
           return (
-            <div key={roots[ri].id} className="relative shrink-0" style={{ width, height }}>
+            <div key={roots[ri].id} className="mx-auto shrink-0" style={{ width: width * scale, height: height * scale }}>
+            <div className="relative origin-top-left" style={{ width, height, transform: scale < 1 ? `scale(${scale})` : undefined }}>
               <svg width={width} height={height} className="absolute inset-0">
                 {placed.map((p) => {
                   const par = p.node.parent !== null ? at.get(p.node.parent) : undefined;
@@ -138,6 +176,7 @@ export function RecursionTree({ tree, idx }: { tree: CallTree; idx: number }) {
                             : "bg-indigo-400/[0.08] ring-indigo-300/30"
                       }`}
                       style={{ width: NODE_W, height: 46 }}
+                      title={fullLabel(p.node) + (done && p.node.ret !== undefined ? ` → ${p.node.ret}` : "")}
                     >
                       <span className={`w-full truncate font-mono text-[12px] ${done ? "text-slate-400" : "text-white"}`}>
                         {label(p.node)}
@@ -153,6 +192,7 @@ export function RecursionTree({ tree, idx }: { tree: CallTree; idx: number }) {
                   );
                 })}
               </AnimatePresence>
+            </div>
             </div>
           );
         })}

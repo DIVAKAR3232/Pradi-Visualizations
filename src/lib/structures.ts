@@ -15,6 +15,18 @@ export type NodeInfo = { id: string; label: string; cls: string };
 
 export type ListStructure = { kind: "list"; cls: string; chains: string[][]; doubly: boolean; nextField: string; prevField?: string };
 export type TreeStructure = { kind: "tree"; cls: string; roots: string[]; leftField: string; rightField: string };
+/** Trie / n-ary tree: children kept in a map or array field. */
+export type NaryStructure = {
+  kind: "nary";
+  cls: string;
+  roots: string[];
+  childField: string;
+  trie: boolean;
+  endField?: string;
+  /** child id → edge label (the character for tries) */
+  edgeLabel: Map<string, string>;
+  children: Map<string, string[]>;
+};
 export type GraphStructure = {
   kind: "graph";
   name: string;
@@ -30,6 +42,7 @@ export type GraphStructure = {
 export type Structures = {
   lists: ListStructure[];
   trees: TreeStructure[];
+  narys: NaryStructure[];
   graphs: GraphStructure[];
   /** Node classes (linked-list / tree) — variables pointing at them show as compact chips. */
   nodeClasses: Set<string>;
@@ -91,9 +104,21 @@ export function detectStructures(step: Step): Structures {
   const nodeClasses = new Set<string>();
   const nodes = new Map<string, NodeInfo>();
 
+  const narys: NaryStructure[] = [];
   for (const cls of classes) {
     const sf = selfFields(heap, cls);
-    if (sf.length === 0) continue;
+    if (sf.length === 0) {
+      const nary = detectNary(heap, cls);
+      if (nary) {
+        narys.push(nary);
+        nodeClasses.add(cls);
+        for (const id of Object.keys(heap)) {
+          const o = heap[id];
+          if (isObj(o) && o.cls === cls) nodes.set(id, { id, cls, label: nary.trie ? (nary.edgeLabel.get(id) ?? "•") : nodeLabel(o) });
+        }
+      }
+      continue;
+    }
     const ids = Object.keys(heap).filter((id) => {
       const o = heap[id];
       return isObj(o) && o.cls === cls;
@@ -153,7 +178,79 @@ export function detectStructures(step: Step): Structures {
     badges.set(v.id, [...(badges.get(v.id) ?? []), n]);
   }
 
-  return { lists, trees, graphs: detectGraphs(step), nodeClasses, badges, nodes };
+  return { lists, trees, narys, graphs: detectGraphs(step), nodeClasses, badges, nodes };
+}
+
+const END_FIELDS = /^(is_?end(_?of_?word)?|end(_?of_?word)?|is_?word|word_?end|eow|is_?leaf|terminal|is_?terminal|flag)$/i;
+
+/** Children of a node kept in a dict / list / array field: [label, childId][] */
+function containerChildren(c: HeapObj | undefined, heap: Heap, cls: string): { kids: [string, string][]; slots: number; charKeys: boolean } | null {
+  if (!c) return null;
+  if (c.kind === "dict") {
+    const kids: [string, string][] = [];
+    let charKeys = true;
+    for (const [k, v] of c.entries) {
+      const t = v.k === "r" ? heap[v.id] : undefined;
+      if (!isObj(t) || t.cls !== cls) continue;
+      const label = k.k === "p" ? String(k.v) : "?";
+      if (label.length !== 1) charKeys = false;
+      kids.push([label, (v as { id: string }).id]);
+    }
+    return { kids, slots: c.entries.length, charKeys: charKeys && kids.length > 0 };
+  }
+  const items = seq(c);
+  if (!items) return null;
+  const kids: [string, string][] = [];
+  let ok = true;
+  items.forEach((v, i) => {
+    if (v.k === "r") {
+      const t = heap[v.id];
+      if (isObj(t) && t.cls === cls) kids.push([items.length === 26 ? String.fromCharCode(97 + i) : items.length === 128 || items.length === 256 ? String.fromCharCode(i) : String(i), v.id]);
+      else ok = false;
+    } else if (!(v.t === "null" || v.t === "NoneType")) ok = false;
+  });
+  return ok ? { kids, slots: items.length, charKeys: items.length === 26 || items.length >= 128 } : null;
+}
+
+function detectNary(heap: Heap, cls: string): NaryStructure | null {
+  const ids = Object.keys(heap).filter((id) => isObj(heap[id]) && (heap[id] as Obj).cls === cls);
+  if (!ids.length) return null;
+  const first = heap[ids[0]] as Obj;
+  for (const [field] of first.fields) {
+    let found = false;
+    let charKeys = false;
+    let valid = true;
+    for (const id of ids) {
+      const o = heap[id] as Obj;
+      const v = o.fields.find(([n]) => n === field)?.[1];
+      const c = v && v.k === "r" ? heap[v.id] : undefined;
+      const r = containerChildren(c, heap, cls);
+      if (!r) {
+        valid = false;
+        break;
+      }
+      if (r.kids.length || r.slots === 26) found = true;
+      if (r.charKeys) charKeys = true;
+    }
+    if (!valid || !found) continue;
+    const children = new Map<string, string[]>();
+    const edgeLabel = new Map<string, string>();
+    const incoming = new Set<string>();
+    for (const id of ids) {
+      const o = heap[id] as Obj;
+      const v = o.fields.find(([n]) => n === field)![1];
+      const r = containerChildren(v.k === "r" ? heap[v.id] : undefined, heap, cls)!;
+      children.set(id, r.kids.map(([, k]) => k));
+      for (const [label, kid] of r.kids) {
+        edgeLabel.set(kid, label);
+        incoming.add(kid);
+      }
+    }
+    const endField = first.fields.find(([n, v]) => END_FIELDS.test(n) && v.k === "p" && (v.t === "bool" || v.t === "boolean" || v.t === "int"))?.[0];
+    const trie = charKeys || /trie/i.test(cls);
+    return { kind: "nary", cls, roots: ids.filter((id) => !incoming.has(id)), childField: field, trie, endField, edgeLabel, children };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- graphs
